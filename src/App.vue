@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref} from 'vue';
+import {ref, watch} from 'vue';
 
 interface Product {
   id: number;
@@ -8,7 +8,52 @@ interface Product {
   description: string;
 }
 
-const products = ref<Product[]>([]);
+const productsStorageKey = 'product-management-products';
+const persistenceError = ref<string | null>(null);
+
+const isProduct = (value: unknown): value is Product => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const product = value as Record<string, unknown>;
+  return Number.isFinite(product.id)
+    && typeof product.name === 'string'
+    && Number.isFinite(product.price)
+    && typeof product.description === 'string';
+};
+
+const loadProducts = (): Product[] => {
+  try {
+    const savedProducts = window.localStorage.getItem(productsStorageKey);
+    if (savedProducts === null) {
+      return [];
+    }
+
+    const parsedProducts: unknown = JSON.parse(savedProducts);
+    if (!Array.isArray(parsedProducts) || !parsedProducts.every(isProduct)) {
+      throw new Error('Saved product data has an invalid format.');
+    }
+
+    return parsedProducts;
+  } catch (error) {
+    console.error('Unable to load saved products.', error);
+    persistenceError.value = 'Saved products could not be loaded. Changes may be lost when you reload.';
+    return [];
+  }
+};
+
+const products = ref<Product[]>(loadProducts());
+watch(products, (savedProducts) => {
+  try {
+    window.localStorage.setItem(productsStorageKey, JSON.stringify(savedProducts));
+    persistenceError.value = null;
+  } catch (error) {
+    console.error('Unable to save products.', error);
+    persistenceError.value = 'Products could not be saved in this browser. Changes may be lost when you reload.';
+  }
+}, { deep: true });
+
 const newProduct = ref<Omit<Product, 'id'>>({
   name: '',
   price: 0,
@@ -125,6 +170,9 @@ const deleteProduct = (productId: number) => {
       <!-- Products List Section -->
       <div>
         <h2 class="text-2xl font-semibold text-gray-700 mb-4">Products</h2>
+        <p v-if="persistenceError" role="alert" class="mb-4 rounded-md bg-amber-100 p-3 text-amber-800">
+          {{ persistenceError }}
+        </p>
         <div v-if="products.length === 0" class="text-center text-gray-500 py-8">
           No products added yet.
         </div>
